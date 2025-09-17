@@ -145,7 +145,7 @@ class LeaseAccounting:
         # 首次计算时，更新原有合同的印花税
         if self.contract.initial_stamp_duty == 0:
             self.contract.initial_stamp_duty = stamp_duty
-            self.db.execute('''
+            self.db.execute_command('''
             UPDATE contracts SET initial_stamp_duty = ? WHERE contract_id = ?
             ''', (stamp_duty, self.contract_id))
         
@@ -321,7 +321,7 @@ class LeaseAccounting:
             return 0.0
         
         # 查询截至当月的未冲回超收增值税记录
-        unpaid_overpaid_records = self.db.query('''
+        unpaid_overpaid_records = self.db.execute_query('''
             SELECT id, vat_amount, tax_obligation_date 
             FROM vat_records
             WHERE contract_id = ? 
@@ -371,42 +371,42 @@ class LeaseAccounting:
 
     def _save_monthly_income(self, year: int, month: int, accounting_income: float, tax_income: float):
         """存储月度收入到数据库"""
-        existing = self.db.query(
+        existing = self.db.execute_query(
             "SELECT id FROM monthly_income WHERE contract_id=? AND year=? AND month=?",
             (self.contract_id, year, month)
         )
         if existing:
             return  # 已存在，不重复存储
 
-        # 插入新记录
-        self.db.execute('''
+        # 插入新记录并获取 ID（假设 execute_command 支持返回插入 ID）
+        monthly_income_id = self.db.execute_return_id('''  # 修改：使用返回 ID 的方法
         INSERT INTO monthly_income (contract_id, year, month, accounting_income, tax_income, tax_rate, is_adjust)
         VALUES (?, ?, ?, ?, ?, ?, ?)
         ''', (self.contract_id, year, month, accounting_income, tax_income,
               self.tax_rate, 1 if self.is_adjust_income else 0))
 
         income_date = datetime.date(year, month, calendar.monthrange(year, month)[1])
-        self.db.execute('''
+        self.db.execute_command('''
         INSERT INTO income_records (
             contract_id, income_date, accounting_income, tax_income,
             source_type, source_id
         ) VALUES (?, ?, ?, ?, 'monthly', ?)
         ''', (self.contract_id, income_date.strftime("%Y-%m-%d"),
               accounting_income, tax_income,
-              # 获取刚插入的monthly_income记录ID
-              self.db.cursor.lastrowid))
+              monthly_income_id  # 使用上面获取的 ID
+             ))
 
     def _save_tax_diff(self, year: int, month: int, accounting_income: float, tax_income: float,
                       diff_amount: float, deferred_tax: float, to_be_settled_vat: float, adjust_vat: float):
         """存储税会差异记录到数据库"""
-        existing = self.db.query(
+        existing = self.db.execute_query(
             "SELECT id FROM tax_diff WHERE contract_id=? AND year=? AND month=?",
             (self.contract_id, year, month)
         )
         if existing:
             return
 
-        self.db.execute('''
+        self.db.execute_command('''
         INSERT INTO tax_diff (contract_id, year, month, accounting_income, tax_income, 
                              diff_amount, deferred_tax, to_be_settled_vat, adjust_vat)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
