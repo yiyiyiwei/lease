@@ -32,22 +32,24 @@ def add_income_tab(app):
         ttk.Label(top_frame, text="年份：").pack(side=tk.LEFT, padx=5, pady=5)
         current_year = datetime.date.today().year
         app.income_year_var = tk.StringVar(value=str(current_year))
-        year_combobox = ttk.Combobox(
+        # 关键修改：将下拉框实例保存到app对象
+        app.income_year_combobox = ttk.Combobox(
             top_frame, textvariable=app.income_year_var,
             values=[str(y) for y in range(current_year - 4, current_year + 2)],
             state="readonly", width=8
         )
-        year_combobox.pack(side=tk.LEFT, padx=5, pady=5)
+        app.income_year_combobox.pack(side=tk.LEFT, padx=5, pady=5)
 
         # 月份选择
         ttk.Label(top_frame, text="月份：").pack(side=tk.LEFT, padx=5, pady=5)
         app.income_month_var = tk.StringVar(value=str(datetime.date.today().month))
-        month_combobox = ttk.Combobox(
+        # 关键修改：将下拉框实例保存到app对象
+        app.income_month_combobox = ttk.Combobox(
             top_frame, textvariable=app.income_month_var,
             values=[str(m) for m in range(1, 13)],
             state="readonly", width=5
         )
-        month_combobox.pack(side=tk.LEFT, padx=5, pady=5)
+        app.income_month_combobox.pack(side=tk.LEFT, padx=5, pady=5)
 
         # 查询/导出按钮
         ttk.Button(
@@ -110,6 +112,15 @@ def add_income_tab(app):
 def query_monthly_income(app):
     """查询指定月份的收入明细"""
     try:
+        # 关键修复：强制将下拉框当前值同步到变量
+        app.income_year_var.set(app.income_year_combobox.get())
+        app.income_month_var.set(app.income_month_combobox.get())
+        
+        # 调试打印（验证同步结果）
+        print("同步后变量值:", app.income_year_var.get(), app.income_month_var.get())
+        print("下拉框实际值:", app.income_year_combobox.get(), app.income_month_combobox.get())
+        
+        # 现在获取的就是同步后的最新值
         year = int(app.income_year_var.get())
         month = int(app.income_month_var.get())
         query_month_last_day = datetime.date(year, month, calendar.monthrange(year, month)[1])
