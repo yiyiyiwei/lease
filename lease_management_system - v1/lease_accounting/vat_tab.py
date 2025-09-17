@@ -252,7 +252,7 @@ def open_invoice_dialog(app):
                 raise ValueError(f"合同ID {contract_id} 不存在")
 
             # 验证发票号唯一性
-            existing_invoice = app.db.query(
+            existing_invoice = app.db.execute_query(
                 "SELECT id FROM invoice_details WHERE invoice_number=?",
                 (invoice_number,)
             )
@@ -318,46 +318,46 @@ def open_invoice_dialog(app):
 
 
 def query_vat_records(app):
-    """查询增值税记录"""
     try:
         year = int(app.vat_year_var.get())
         month = int(app.vat_month_var.get())
+        
+        # 1. 修复日期格式生成（确保月份补零正确）
         tax_start_date = f"{year}-{month:02d}-01"
-        tax_end_date = f"{year}-{month:02d}-{calendar.monthrange(year, month)[1]}"
+        last_day = calendar.monthrange(year, month)[1]
+        tax_end_date = f"{year}-{month:02d}-{last_day:02d}"  # 确保天数补零
         
-        # 清空表格
-        for item in app.vat_tree.get_children():
-            app.vat_tree.delete(item)
-        
-        # 查询增值税记录
-        vat_records = app.db.query('''
-        SELECT DISTINCT
-            vr.id AS vat_id, 
-            vr.contract_id, 
-            c.customer_name, 
-            vr.relate_type,
-            vr.tax_obligation_date AS tax_date, 
-            vr.vat_amount, 
-            vr.status,
-            pr.date AS payment_relate_date,       
-            pr.amount AS payment_total_amount,   
-            id.invoice_date AS invoice_relate_date,  
-            id.total_amount AS invoice_total_amount,
-            mi.tax_income * (1 + c.tax_rate) AS receivable_total_amount
-        FROM vat_records vr
-        LEFT JOIN contracts c ON vr.contract_id = c.contract_id
-        LEFT JOIN payment_records pr 
-            ON vr.relate_type = 'payment' 
-            AND vr.relate_id = CAST(pr.id AS TEXT)
-        LEFT JOIN invoice_details id 
-            ON vr.relate_type = 'invoice' 
-            AND vr.relate_id = id.invoice_number
-        LEFT JOIN monthly_income mi 
-            ON vr.contract_id = mi.contract_id 
-            AND mi.year = strftime('%Y', vr.tax_obligation_date)
-            AND mi.month = strftime('%m', vr.tax_obligation_date)
-        WHERE vr.tax_obligation_date BETWEEN ? AND ?
-        ''', (tax_start_date, tax_end_date))
+        # 2. 优化查询条件：精确匹配年月（而非仅日期范围，避免跨月边界问题）
+        vat_records = app.db.execute_query('''  # 注意：使用execute_query而非query
+            SELECT DISTINCT
+                vr.id AS vat_id, 
+                vr.contract_id, 
+                c.customer_name, 
+                vr.relate_type,
+                vr.tax_obligation_date AS tax_date, 
+                vr.vat_amount, 
+                vr.status,
+                pr.date AS payment_relate_date,       
+                pr.amount AS payment_total_amount,   
+                id.invoice_date AS invoice_relate_date,  
+                id.total_amount AS invoice_total_amount,
+                mi.tax_income * (1 + c.tax_rate) AS receivable_total_amount
+            FROM vat_records vr
+            LEFT JOIN contracts c ON vr.contract_id = c.contract_id
+            LEFT JOIN payment_records pr 
+                ON vr.relate_type = 'payment' 
+                AND vr.relate_id = CAST(pr.id AS TEXT)
+            LEFT JOIN invoice_details id 
+                ON vr.relate_type = 'invoice' 
+                AND vr.relate_id = id.invoice_number
+            LEFT JOIN monthly_income mi 
+                ON vr.contract_id = mi.contract_id 
+                AND mi.year = strftime('%Y', vr.tax_obligation_date)
+                AND mi.month = strftime('%m', vr.tax_obligation_date)
+            WHERE 
+                strftime('%Y', vr.tax_obligation_date) = ?  # 精确匹配年份
+                AND strftime('%m', vr.tax_obligation_date) = ?  # 精确匹配月份
+        ''', (str(year), f"{month:02d}"))  # 传递字符串格式的年月，与strftime结果一致
 
         # 处理特殊情形
         def get_special_case(relate_type, relate_date, tax_date, contract_id):
@@ -372,7 +372,7 @@ def query_vat_records(app):
 
             # 先收款/先开票：触发日期早于纳税义务日期
             if relate_type in ["payment", "invoice"] and relate_date_obj < tax_date_obj:
-                income_exist = app.db.query('''
+                income_exist = app.db.execute_query('''
                 SELECT id FROM monthly_income 
                 WHERE contract_id=? AND year=? AND month=? AND tax_income>0
                 ''', (contract_id, tax_date_obj.year, tax_date_obj.month))
@@ -382,11 +382,11 @@ def query_vat_records(app):
                     return f"先{relate_type}未确认收入"
             # 先确认收入未收款/未开票
             elif relate_type == "receivable":
-                has_payment = app.db.query('''
+                has_payment = app.db.execute_query('''
                 SELECT id FROM payment_records 
                 WHERE contract_id=? AND date > ? AND amount>0
                 ''', (contract_id, tax_date))
-                has_invoice = app.db.query('''
+                has_invoice = app.db.execute_query('''
                 SELECT id FROM invoice_details 
                 WHERE contract_id=? AND invoice_date > ? AND total_amount>0
                 ''', (contract_id, tax_date))
