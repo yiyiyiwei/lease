@@ -22,7 +22,7 @@ class DatabaseManager:
         self._connection = None
         self._cursor = None
         self.init_database()
-    
+     
     @contextmanager
     def get_connection(self):
         """获取数据库连接的上下文管理器"""
@@ -225,6 +225,20 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"命令执行失败: SQL={sql}, 参数={params}, 错误={str(e)}")
             return False
+
+    # 新增：执行INSERT并返回自增ID
+    def execute_return_id(self, sql: str, params: tuple = ()) -> Optional[int]:
+        """执行插入语句并返回新记录的ID"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(sql, params)
+                conn.commit()
+                return cursor.lastrowid  # 返回自增ID
+        except Exception as e:
+            logger.error(f"插入并返回ID失败: SQL={sql}, 参数={params}, 错误={str(e)}")
+            return None  # 失败时返回None
+
     
     def execute_command_with_id(self, sql: str, params: tuple = ()) -> Optional[int]:
         """执行命令并返回最后插入的ID"""
